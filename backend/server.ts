@@ -529,6 +529,17 @@ app.post('/api/review-dpa', async (req: Request<{}, DpaAnalysisResult | { error:
         res.status(500).json({ error: `Failed to review DPA. ${message}` });
     }
 });
+app.get('/', (req: Request, res: Response) => {
+  res.status(200).json({
+    message: 'Welcome to the Holistic Compliance Engine API! Access specific endpoints like /api/scan, /api/scan-vulnerabilities, or /api/review-dpa.',
+    version: '1.0.0', // Optional: add your API version
+    status: 'Online'
+  });
+});
+
+app.listen(port, () => {
+  console.log(`[SERVER] Cookie Care listening on http://localhost:${port}`);
+});
 
 app.listen(port, () => {
   console.log(`[SERVER] Cookie Care listening on http://localhost:${port}`);
