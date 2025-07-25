@@ -1,27 +1,42 @@
 
-import express, { Request, Response } from 'express';
-import puppeteer, { type Cookie, type Page, type Frame, Browser, HTTPResponse } from 'puppeteer';
+import express from 'express';
+import type { Request, Response } from 'express';
+import puppeteer, { type Cookie, type Page, type Frame, Browser } from 'puppeteer';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
 import { CookieCategory, type CookieInfo, type ScanResultData, type TrackerInfo, ComplianceStatus, type DpaAnalysisResult, type DpaPerspective, type VulnerabilityScanResult, type VulnerabilityCategory } from './types.js';
 
 dotenv.config();
 
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
 
+// --- Path setup for serving static files ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// --- Middleware ---
 app.use(cors());
 app.use(express.json({ limit: '5mb' })); // Increase limit for DPA text
 
+// Serve static files from the React app build directory
+// This needs to be defined BEFORE your API routes
+app.use(express.static(path.join(__dirname, '..', '..')));
+
+
+// --- API Key and AI Initialization ---
 if (!process.env.API_KEY) {
   console.error("FATAL ERROR: API_KEY environment variable is not set.");
   (process as any).exit(1);
 }
-
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const model = "gemini-2.5-flash";
 
+
+// --- Helper Functions and Constants ---
 const knownTrackerDomains = [
     'google-analytics.com', 'googletagmanager.com', 'analytics.google.com', 'doubleclick.net', 'googleadservices.com', 'googlesyndication.com', 'connect.facebook.net', 'facebook.com/tr', 'c.clarity.ms', 'clarity.ms', 'hotjar.com', 'hotjar.io', 'hjid.hotjar.com', 'hubspot.com', 'hs-analytics.net', 'track.hubspot.com', 'linkedin.com/px', 'ads.linkedin.com', 'twitter.com/i/ads', 'ads-twitter.com', 'bing.com/ads', 'semrush.com', 'optimizely.com', 'vwo.com', 'crazyegg.com', 'taboola.com', 'outbrain.com', 'criteo.com', 'addthis.com', 'sharethis.com', 'tiqcdn.com', // Tealium
 ];
@@ -103,6 +118,7 @@ const collectPageData = async (page: Page): Promise<{ cookies: Cookie[], tracker
     return { cookies, trackers };
 }
 
+// --- API Endpoints ---
 interface ApiScanRequestBody { url: string; }
 
 app.post('/api/scan', async (req: Request<{}, ScanResultData | { error: string }, ApiScanRequestBody>, res: Response<ScanResultData | { error: string }>) => {
@@ -169,8 +185,7 @@ app.post('/api/scan', async (req: Request<{}, ScanResultData | { error: string }
         });
     }
 
-    // --- BATCHING LOGIC ---
-    const BATCH_SIZE = 15; // Further reduced batch size for maximum stability
+    const BATCH_SIZE = 15;
     const batches = [];
     for (let i = 0; i < allItemsToAnalyze.length; i += BATCH_SIZE) {
         batches.push(allItemsToAnalyze.slice(i, i + BATCH_SIZE));
@@ -246,7 +261,6 @@ Return ONLY the valid JSON array of results.`;
     const aggregatedAnalysis = allBatchAnalyses.flat();
     console.log('[AI] All batches analyzed successfully.');
 
-    // --- FINAL COMPLIANCE ASSESSMENT ---
     const violationSummary = {
         preConsentViolations: aggregatedAnalysis.filter(a => a.complianceStatus === 'Pre-Consent Violation').length,
         postRejectionViolations: aggregatedAnalysis.filter(a => a.complianceStatus === 'Post-Rejection Violation').length,
@@ -282,7 +296,6 @@ Return ONLY the valid JSON object.`;
     }
     const complianceAnalysis = JSON.parse(complianceText);
     
-    // --- MERGE AND ENRICH DATA ---
     const analysisMap = new Map(aggregatedAnalysis.map((item: any) => [item.key, item]));
     const scannedUrlHostname = new URL(url).hostname;
     
@@ -529,13 +542,14 @@ app.post('/api/review-dpa', async (req: Request<{}, DpaAnalysisResult | { error:
         res.status(500).json({ error: `Failed to review DPA. ${message}` });
     }
 });
-app.get('/', (req: Request, res: Response) => {
-  res.status(200).json({
-    message: 'Welcome to the Holistic Compliance Engine API! Access specific endpoints like /api/scan, /api/scan-vulnerabilities, or /api/review-dpa.',
-    version: '1.0.0', // Optional: add your API version
-    status: 'Online'
-  });
+
+// The "catchall" handler: for any request that doesn't match an API route above,
+// send back the React app's index.html file.
+app.get('*', (req: Request, res: Response) => {
+  res.sendFile(path.join(__dirname, '..', '..', 'index.html'));
 });
+
+
 app.listen(port, () => {
-  console.log(`[SERVER] Cookie Care listening on http://localhost:${port}`);
+  console.log(`[SERVER] Server listening on port: ${port}. Ready to serve API and frontend.`);
 });
