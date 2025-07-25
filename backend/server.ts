@@ -536,3 +536,6 @@ app.get('/', (req: Request, res: Response) => {
     status: 'Online'
   });
 });
+app.listen(port, () => {
+  console.log(`[SERVER] Cookie Care listening on http://localhost:${port}`);
+});
